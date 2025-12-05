@@ -2,6 +2,8 @@
 name = "bevy_quadcopter"
 version = "0.1.0"
 edition = "2024"
+authors = ["Henry Gerard Moore"]
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 bevy = "0.17.3"
