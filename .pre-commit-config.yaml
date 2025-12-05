@@ -1,0 +1,45 @@
+repos:
+    # Standard hooks
+    - repo: https://github.com/pre-commit/pre-commit-hooks
+      rev: v6.0.0
+      hooks:
+          - id: check-added-large-files
+            args: ["--maxkb=1000"]
+          - id: check-ast
+          - id: check-builtin-literals
+          - id: check-case-conflict
+          - id: check-docstring-first
+          - id: check-executables-have-shebangs
+          - id: check-json
+          - id: check-executables-have-shebangs
+          - id: pretty-format-json
+            args: ["--autofix"]
+          - id: check-merge-conflict
+          - id: check-symlinks
+          - id: check-toml
+          - id: check-yaml
+          - id: destroyed-symlinks
+          - id: detect-private-key
+          - id: end-of-file-fixer
+          - id: mixed-line-ending
+          - id: fix-byte-order-marker
+          - id: fix-encoding-pragma
+          - id: mixed-line-ending
+          - id: sort-simple-yaml
+          - id: trailing-whitespace
+    # rust hooks
+    - repo: https://github.com/doublify/pre-commit-rust
+      rev: v1.0
+      hooks:
+          - id: fmt
+          - id: cargo-check
+          - id: clippy
+    - repo: local
+      hooks:
+      - id: cargo-test
+        name: cargo test
+        description: Run the package's test
+        entry: cargo test
+        language: system
+        types: [rust]
+        pass_filenames: false
