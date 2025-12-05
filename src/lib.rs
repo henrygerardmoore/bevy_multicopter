@@ -1,43 +1,50 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-pub struct QuadcopterDerivatives {
-    pub acceleration: Vec3,
-    pub angular_acceleration: Vec3,
+#[derive(Debug)]
+pub struct QuadcopterForceTorque {
+    pub force: Vec3,
+    pub torque: Vec3,
 }
 
 #[derive(Serialize, Deserialize, Reflect)]
 pub struct PropellerInfo {
     /// the body frame position of this propeller
-    position: Vec3,
-    direction: Vec3,
-    thrust_constant: f32,
-    drag_constant: f32,
+    pub position: Vec3,
+    pub direction: Vec3,
+    pub thrust_constant: f32,
+    pub drag_constant: f32,
+}
+
+impl PropellerInfo {
+    pub fn from_position(position: Vec3) -> Self {
+        Self {
+            position,
+            direction: Vec3::Y,
+            // TODO: what are reasonable values for these
+            thrust_constant: 1.,
+            drag_constant: 0.5,
+        }
+    }
 }
 
 #[derive(Component, Serialize, Deserialize, Reflect)]
 #[reflect(Component)]
 pub struct Multicopter {
-    inverse_inertia: Mat3,
-    /// the 3x3 inertia matrix, each element in kg * m^2
-    inertia: Mat3,
-    /// the inverse mass of the quadcopter, 1/kg
-    inverse_mass: f32,
     propellers: Vec<PropellerInfo>,
 }
 
 impl Multicopter {
     /// the state derivative of this quadcopter given its current world transform and the control inputs
     /// equations adapted from [Modelling and control of quadcopter](https://sal.aalto.fi/publications/pdf-files/eluu11_public.pdf)
-    pub fn state_derivative(
+    pub fn force_torque(
         &self,
-        quadcopter_state: GlobalTransform,
-        angular_velocity: Vec3,
+        quadcopter_state: &GlobalTransform,
+        angular_velocity: &Vec3,
         // TODO: instead of inputting omega directly, allow for thrust curves or something
-        quadcopter_control_inputs: Vec<f32>,
-        external_force: Vec3,
-        external_torque: Vec3,
-    ) -> Result<QuadcopterDerivatives, String> {
+        quadcopter_control_inputs: &Vec<f32>,
+        inertia: &Mat3,
+    ) -> Result<QuadcopterForceTorque, String> {
         if quadcopter_control_inputs.len() != self.propellers.len() {
             return Err("Incorrect control input length".into());
         }
@@ -71,26 +78,15 @@ impl Multicopter {
             })
             .sum();
 
-        let acceleration =
-            self.inverse_mass * (external_force + quadcopter_state.rotation() * thrust);
-        let angular_acceleration = self.inertia.inverse()
-            * (external_torque + quadcopter_state.rotation() * propeller_torque
-                - angular_velocity.cross(self.inertia * angular_velocity));
-        Ok(QuadcopterDerivatives {
-            acceleration,
-            angular_acceleration,
-        })
+        let force = quadcopter_state.rotation() * thrust;
+        let torque = quadcopter_state.rotation() * propeller_torque
+            - angular_velocity.cross(inertia * angular_velocity);
+        Ok(QuadcopterForceTorque { force, torque })
     }
 
-    pub fn new(inertia: Mat3, mass: f32, propellers: Vec<PropellerInfo>) -> Result<Self, String> {
+    pub fn new(propellers: Vec<PropellerInfo>) -> Result<Self, String> {
         assert!(!propellers.is_empty(), "Don't try to simulate a 0-copter");
-        let inverse_inertia = inertia.inverse();
-        Ok(Self {
-            inertia,
-            inverse_mass: mass.recip(),
-            propellers,
-            inverse_inertia,
-        })
+        Ok(Self { propellers })
     }
 }
 

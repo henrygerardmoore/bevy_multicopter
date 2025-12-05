@@ -6,5 +6,8 @@ authors = ["Henry Gerard Moore"]
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+avian3d = "0.4"
 bevy = "0.17.3"
+bevy_egui = "0.38.0"
+bevy-inspector-egui = "0.35"
 serde = "1.0.228"
