@@ -1,5 +1,5 @@
 use avian3d::prelude::*;
-use bevy::{core_pipeline::Skybox, math::VectorSpace, prelude::*};
+use bevy::{core_pipeline::Skybox, prelude::*};
 use bevy_egui::EguiPlugin;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy_quadcopter::{Multicopter, PropellerInfo, RotationDirection};
@@ -109,6 +109,8 @@ pub fn setup(
         Mass(quad_mass),
         AngularInertia::new(Vec3::splat(1e-2)),
         SweptCcd::NON_LINEAR,
+        // TODO: remove with angular control
+        LockedAxes::ROTATION_LOCKED,
     ));
 
     // spawn the level
@@ -127,13 +129,20 @@ pub struct QuadcopterControls([f32; 4]);
 // control the quad with keyboard inputs
 pub fn control_quadcopter(
     keyboard_inputs: Res<ButtonInput<KeyCode>>,
-    _quadcopter_query: Query<(&mut QuadcopterControls, &Multicopter)>,
+    mut quadcopter_query: Single<&mut QuadcopterControls, With<Multicopter>>,
     mut time: ResMut<Time<Virtual>>,
     mut quadcopter_transform_query: Single<
-        (&mut Transform, &mut LinearVelocity, &mut AngularVelocity),
+        (
+            &mut Transform,
+            &mut LinearVelocity,
+            &mut AngularVelocity,
+            &ComputedMass,
+        ),
         With<Multicopter>,
     >,
     gravity: Res<Gravity>,
+    mut desired_altitude: Local<Option<f32>>,
+    mut integral_term: Local<f32>,
 ) {
     // TODO: unpause on assets loaded instead of manually doing it
     if keyboard_inputs.just_pressed(KeyCode::KeyP) {
@@ -150,17 +159,63 @@ pub fn control_quadcopter(
         *quadcopter_transform_query.1 = LinearVelocity(Vec3::ZERO);
         *quadcopter_transform_query.2 = AngularVelocity(Vec3::ZERO);
     }
-    // TODO: map keyboard input to desired angular and linear vel
-    // both in body frame
-    let desired_angular_vel = Vec3::ZERO;
-    let desired_linear_vel = Vec3::ZERO;
+    let (transform, linear_velocity, angular_velocity, mass) =
+        quadcopter_transform_query.into_inner();
+
+    // on first run, set the desired altitude to our current altitude
+    if desired_altitude.is_none() {
+        *desired_altitude = Some(transform.translation.y);
+    }
+
+    // TODO: map keyboard input to desired angle and altitude
+    // both in world frame
+    let desired_orientation = Quat::IDENTITY;
+    let desired_altitude = desired_altitude.unwrap();
 
     // target hover
-    let (transform, linear_velocity, angular_velocity) = quadcopter_transform_query.into_inner();
+    let vertical_proportional_gain = 10.;
+    let vertical_derivative_gain = 20.;
+    let vertical_i_gain = 30.;
+    let gravity_force = gravity.0.y * mass.value();
+    let altitude = transform.translation.y;
+    let vertical_velocity = linear_velocity.y;
+    let p_term = vertical_proportional_gain * (desired_altitude - altitude);
+    let d_term = vertical_derivative_gain * (0. - vertical_velocity);
+    let dt = time.delta_secs();
+    *integral_term += dt * (desired_altitude - altitude);
+    let i_term = vertical_i_gain * *integral_term;
+    let desired_vertical_thrust = p_term + i_term + d_term - gravity_force;
 
-    // WIP: gravity compensation
+    // the proportion of thrust that actually helps go up
+    let vertical_thrust_coeff = transform.local_y().dot(Vec3::Y);
+    let needed_vertical_thrust = if vertical_thrust_coeff <= 1e-2 || desired_vertical_thrust < 0. {
+        // if we are barely pointing up or pointing down (or our desired thrust is negative), then just accept that we can't produce the necessary vertical thrust
+        0.
+    } else {
+        desired_vertical_thrust / vertical_thrust_coeff
+    };
 
-    // TODO: do simple PD to command quad and compensate for gravity
+    // TODO: orientation control
+    let _vertical_proportional_gain = 1.;
+    let _vertical_derivative_gain = 0.5;
+    let _orientation_difference = desired_orientation * transform.rotation.inverse();
+    let _angular_velocity_difference = Vec3::ZERO - angular_velocity.0;
+
+    let controls = quadcopter_query.as_mut();
+    let necessary_propeller_rotation_rate = (needed_vertical_thrust / 4. / THRUST_CONSTANT).sqrt();
+    if dt > 0. {
+        println!(
+            "Altitude: {}, Vel: {}, p: {}, i: {}, d: {}, grav_comp: {}, prop rate: {}",
+            altitude,
+            vertical_velocity,
+            p_term,
+            i_term,
+            d_term,
+            -gravity_force,
+            necessary_propeller_rotation_rate,
+        );
+    }
+    controls.0 = [necessary_propeller_rotation_rate; 4];
 }
 
 pub fn quadcopter_dynamics(
