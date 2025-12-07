@@ -8,6 +8,8 @@ Quadcopter model is from [this cool FPV project](https://www.printables.com/mode
 
 This project was started for and inspired by [Copper](https://github.com/copper-project/copper-rs). Check it out!
 
+The skybox was also taken from [Copper](https://cdn.copper-robotics.com/skybox.ktx2).
+
 ## License
 
 You can use this project under either the [Apache License (Version 2.0)](./LICENSE-APACHE) or the [MIT license](./LICENSE-MIT).

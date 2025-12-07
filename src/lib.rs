@@ -8,24 +8,19 @@ pub struct QuadcopterForceTorque {
 }
 
 #[derive(Serialize, Deserialize, Reflect)]
+pub enum RotationDirection {
+    CounterClockWise,
+    ClockWise,
+}
+
+#[derive(Serialize, Deserialize, Reflect)]
 pub struct PropellerInfo {
     /// the body frame position of this propeller
     pub position: Vec3,
-    pub direction: Vec3,
+    pub direction: Dir3,
     pub thrust_constant: f32,
     pub drag_constant: f32,
-}
-
-impl PropellerInfo {
-    pub fn from_position(position: Vec3) -> Self {
-        Self {
-            position,
-            direction: Vec3::Y,
-            // TODO: what are reasonable values for these
-            thrust_constant: 1.,
-            drag_constant: 0.5,
-        }
-    }
+    pub rotation_direction: RotationDirection,
 }
 
 #[derive(Component, Serialize, Deserialize, Reflect)]
@@ -74,7 +69,10 @@ impl Multicopter {
                 // torque due to thrust of propeller
                 propeller.position.cross(force)
             // torque due to rotational drag of propeller
-            + propeller.drag_constant * omega.powi(2)
+            + propeller.drag_constant * omega.powi(2) * match propeller.rotation_direction {
+                RotationDirection::CounterClockWise => 1.,
+                RotationDirection::ClockWise => -1.,
+            }
             })
             .sum();
 
