@@ -109,7 +109,7 @@ pub fn setup(
         Mass(quad_mass),
         AngularInertia::new(Vec3::splat(1e-2)),
         SweptCcd::NON_LINEAR,
-        AngularDamping(0.1),
+        AngularDamping(0.5),
         LinearDamping(0.5),
     ));
 
@@ -162,6 +162,9 @@ pub fn control_quadcopter(
     let (transform, linear_velocity, angular_velocity, mass) =
         quadcopter_transform_query.into_inner();
 
+    // transform angular velocity to body frame
+    let angular_velocity = transform.rotation.inverse() * angular_velocity.0;
+
     // on first run, set the desired altitude to our current altitude
     if desired_altitude.is_none() {
         *desired_altitude = Some(transform.translation.y);
@@ -205,9 +208,9 @@ pub fn control_quadcopter(
     }
 
     // target hover
-    let vertical_proportional_gain = 10.;
-    let vertical_derivative_gain = 20.;
-    let vertical_i_gain = 30.;
+    let vertical_proportional_gain = 40.;
+    let vertical_derivative_gain = 30.;
+    let vertical_i_gain = 0.;
     let gravity_force = gravity.0.y * mass.value();
     let altitude = transform.translation.y;
     let vertical_velocity = linear_velocity.y;
@@ -231,8 +234,8 @@ pub fn control_quadcopter(
     // in order to achieve the necessary angle control
     let mut propeller_thrust_proportions = [0.0_f32; 4];
 
-    let angular_proportional_gain = 5.;
-    let angular_derivative_gain = 2.5;
+    let angular_proportional_gain = 0.05;
+    let angular_derivative_gain = 0.01;
     let roll_diff = desired_roll - roll;
     let pitch_diff = desired_pitch - pitch;
     let yaw_diff = desired_yaw - yaw;
@@ -240,7 +243,7 @@ pub fn control_quadcopter(
         x: 0.,
         y: desired_yaw_rate,
         z: 0.,
-    } - angular_velocity.0;
+    } - angular_velocity;
 
     let p_pitch = angular_proportional_gain * (pitch_diff);
     let d_pitch = angular_derivative_gain * angular_velocity_difference.x;
