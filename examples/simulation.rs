@@ -142,7 +142,6 @@ pub fn control_quadcopter(
     >,
     gravity: Res<Gravity>,
     mut desired_altitude: Local<Option<f32>>,
-    mut integral_term: Local<f32>,
 ) {
     // TODO: unpause on assets loaded instead of manually doing it
     if keyboard_inputs.just_pressed(KeyCode::KeyP) {
@@ -210,15 +209,12 @@ pub fn control_quadcopter(
     // target hover
     let vertical_proportional_gain = 40.;
     let vertical_derivative_gain = 30.;
-    let vertical_i_gain = 0.;
     let gravity_force = gravity.0.y * mass.value();
     let altitude = transform.translation.y;
     let vertical_velocity = linear_velocity.y;
     let p_term = vertical_proportional_gain * (*desired_altitude - altitude);
     let d_term = vertical_derivative_gain * (0. - vertical_velocity);
-    *integral_term += dt * (*desired_altitude - altitude);
-    let i_term = vertical_i_gain * *integral_term;
-    let desired_vertical_thrust = p_term + i_term + d_term - gravity_force;
+    let desired_vertical_thrust = p_term + d_term - gravity_force;
 
     // the proportion of thrust that actually helps go up
     let vertical_thrust_coeff = transform.local_y().dot(Vec3::Y);
