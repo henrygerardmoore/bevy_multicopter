@@ -1,6 +1,8 @@
 use avian3d::prelude::*;
 use bevy::{core_pipeline::Skybox, prelude::*};
+#[cfg(feature = "dev")]
 use bevy_egui::EguiPlugin;
+#[cfg(feature = "dev")]
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy_quadcopter::{Multicopter, PropellerInfo, RotationDirection};
 
@@ -15,8 +17,11 @@ fn main() {
         .add_plugins((
             DefaultPlugins,
             PhysicsPlugins::default(),
+            #[cfg(feature = "dev")]
             EguiPlugin::default(),
+            #[cfg(feature = "dev")]
             WorldInspectorPlugin::new(),
+            #[cfg(feature = "dev")]
             PhysicsDebugPlugin::default(),
         ))
         .add_systems(Startup, setup)
