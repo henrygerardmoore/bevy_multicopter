@@ -109,8 +109,8 @@ pub fn setup(
         Mass(quad_mass),
         AngularInertia::new(Vec3::splat(1e-2)),
         SweptCcd::NON_LINEAR,
-        // TODO: remove with angular control
-        LockedAxes::ROTATION_LOCKED,
+        AngularDamping(0.1),
+        LinearDamping(0.5),
     ));
 
     // spawn the level
@@ -166,11 +166,43 @@ pub fn control_quadcopter(
     if desired_altitude.is_none() {
         *desired_altitude = Some(transform.translation.y);
     }
+    let dt = time.delta_secs();
 
-    // TODO: map keyboard input to desired angle and altitude
-    // both in world frame
-    let desired_orientation = Quat::IDENTITY;
-    let desired_altitude = desired_altitude.unwrap();
+    let (yaw, pitch, roll) = transform.rotation.to_euler(EulerRot::YXZ);
+    let mut desired_pitch = 0.;
+    let mut desired_roll = 0.;
+    // we control yaw rate instead of yaw, so we always set the desired yaw to the current
+    let desired_yaw = yaw;
+    let mut desired_yaw_rate = 0.;
+
+    if keyboard_inputs.pressed(KeyCode::KeyW) {
+        desired_pitch -= 20.0_f32.to_radians();
+    }
+    if keyboard_inputs.pressed(KeyCode::KeyS) {
+        desired_pitch += 20.0_f32.to_radians();
+    }
+
+    if keyboard_inputs.pressed(KeyCode::KeyD) {
+        desired_roll -= 20.0_f32.to_radians();
+    }
+    if keyboard_inputs.pressed(KeyCode::KeyA) {
+        desired_roll += 20.0_f32.to_radians();
+    }
+
+    let desired_altitude = desired_altitude.as_mut().unwrap();
+    if keyboard_inputs.pressed(KeyCode::Space) {
+        *desired_altitude += dt * 2.;
+    }
+    if keyboard_inputs.pressed(KeyCode::ControlLeft) {
+        *desired_altitude -= dt * 2.;
+    }
+
+    if keyboard_inputs.pressed(KeyCode::KeyQ) {
+        desired_yaw_rate += 1.;
+    }
+    if keyboard_inputs.pressed(KeyCode::KeyE) {
+        desired_yaw_rate -= 1.;
+    }
 
     // target hover
     let vertical_proportional_gain = 10.;
@@ -179,10 +211,9 @@ pub fn control_quadcopter(
     let gravity_force = gravity.0.y * mass.value();
     let altitude = transform.translation.y;
     let vertical_velocity = linear_velocity.y;
-    let p_term = vertical_proportional_gain * (desired_altitude - altitude);
+    let p_term = vertical_proportional_gain * (*desired_altitude - altitude);
     let d_term = vertical_derivative_gain * (0. - vertical_velocity);
-    let dt = time.delta_secs();
-    *integral_term += dt * (desired_altitude - altitude);
+    *integral_term += dt * (*desired_altitude - altitude);
     let i_term = vertical_i_gain * *integral_term;
     let desired_vertical_thrust = p_term + i_term + d_term - gravity_force;
 
@@ -195,27 +226,65 @@ pub fn control_quadcopter(
         desired_vertical_thrust / vertical_thrust_coeff
     };
 
-    // TODO: orientation control
-    let _vertical_proportional_gain = 1.;
-    let _vertical_derivative_gain = 0.5;
-    let _orientation_difference = desired_orientation * transform.rotation.inverse();
-    let _angular_velocity_difference = Vec3::ZERO - angular_velocity.0;
+    // the portion of the whole that each propeller must take
+    // they will sum to 1. and thus achieve the necessary thrust, but may take on different values
+    // in order to achieve the necessary angle control
+    let mut propeller_thrust_proportions = [0.0_f32; 4];
+
+    let angular_proportional_gain = 5.;
+    let angular_derivative_gain = 2.5;
+    let roll_diff = desired_roll - roll;
+    let pitch_diff = desired_pitch - pitch;
+    let yaw_diff = desired_yaw - yaw;
+    let angular_velocity_difference = Vec3 {
+        x: 0.,
+        y: desired_yaw_rate,
+        z: 0.,
+    } - angular_velocity.0;
+
+    let p_pitch = angular_proportional_gain * (pitch_diff);
+    let d_pitch = angular_derivative_gain * angular_velocity_difference.x;
+    let desired_pitch_torque = p_pitch + d_pitch;
+
+    let p_yaw = angular_proportional_gain * (yaw_diff);
+    let d_yaw = angular_derivative_gain * angular_velocity_difference.y;
+    let desired_yaw_torque = p_yaw + d_yaw;
+
+    let p_roll = angular_proportional_gain * (roll_diff);
+    let d_roll = angular_derivative_gain * angular_velocity_difference.z;
+    let desired_roll_torque = p_roll + d_roll;
+
+    // map the desired roll pitch yaw torques to the propellers according to their positions
+    propeller_thrust_proportions[0] =
+        -desired_pitch_torque + desired_roll_torque + desired_yaw_torque;
+    propeller_thrust_proportions[1] =
+        -desired_pitch_torque - desired_roll_torque - desired_yaw_torque;
+    propeller_thrust_proportions[2] =
+        desired_pitch_torque + desired_roll_torque - desired_yaw_torque;
+    propeller_thrust_proportions[3] =
+        desired_pitch_torque - desired_roll_torque + desired_yaw_torque;
+
+    // compute the values such that no propeller wants to go backwards (may result in less control authority)
+    let reduction_factor =
+        propeller_thrust_proportions
+            .iter()
+            .cloned()
+            .fold(1.0_f32, |acc, proportion| {
+                acc.min(if proportion < -0.25 {
+                    -0.25 / proportion
+                } else {
+                    1.
+                })
+            });
+
+    // shrink commands down if necessary and add the 0.25 baseline corresponding to equal control of each
+    let propeller_thrust_proportions =
+        propeller_thrust_proportions.map(|proportion| 0.25 + proportion * reduction_factor);
 
     let controls = quadcopter_query.as_mut();
-    let necessary_propeller_rotation_rate = (needed_vertical_thrust / 4. / THRUST_CONSTANT).sqrt();
-    if dt > 0. {
-        println!(
-            "Altitude: {}, Vel: {}, p: {}, i: {}, d: {}, grav_comp: {}, prop rate: {}",
-            altitude,
-            vertical_velocity,
-            p_term,
-            i_term,
-            d_term,
-            -gravity_force,
-            necessary_propeller_rotation_rate,
-        );
-    }
-    controls.0 = [necessary_propeller_rotation_rate; 4];
+    let necessary_propeller_rotation_rate = (needed_vertical_thrust / THRUST_CONSTANT).sqrt();
+    controls.0 = propeller_thrust_proportions
+        .map(|proportion| necessary_propeller_rotation_rate * proportion);
 }
 
 pub fn quadcopter_dynamics(
