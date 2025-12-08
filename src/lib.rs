@@ -72,7 +72,7 @@ impl Multicopter {
             + propeller.drag_constant * omega.powi(2) * match propeller.rotation_direction {
                 RotationDirection::CounterClockWise => 1.,
                 RotationDirection::ClockWise => -1.,
-            }
+            } * propeller.direction
             })
             .sum();
 
