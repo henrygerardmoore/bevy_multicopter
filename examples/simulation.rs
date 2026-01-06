@@ -1,5 +1,5 @@
 use avian3d::prelude::*;
-use bevy::{core_pipeline::Skybox, prelude::*};
+use bevy::{core_pipeline::Skybox, prelude::*, scene::SceneInstance};
 #[cfg(feature = "dev")]
 use bevy_egui::EguiPlugin;
 #[cfg(feature = "dev")]
@@ -31,7 +31,14 @@ fn main() {
             PhysicsDebugPlugin::default(),
         ))
         .add_systems(Startup, setup)
-        .add_systems(Update, (control_quadcopter, change_window_title))
+        .add_systems(
+            Update,
+            (
+                control_quadcopter,
+                change_window_title,
+                unpause_on_all_asset_load,
+            ),
+        )
         .add_systems(FixedUpdate, (quadcopter_dynamics, camera_follow_quadcopter))
         .run();
 }
@@ -146,6 +153,25 @@ pub struct QuadcopterGains {
     pub d_angular: f32,
 }
 
+// unpauses the simulation the first time that all assets have loaded
+pub fn unpause_on_all_asset_load(
+    scene_root_query: Query<Entity, With<SceneRoot>>,
+    scene_instance_query: Query<&SceneInstance>,
+    mut time: ResMut<Time<Virtual>>,
+    mut has_unpaused: Local<bool>,
+) {
+    if *has_unpaused {
+        return;
+    }
+    if scene_root_query
+        .iter()
+        .all(|scene_root_entity| scene_instance_query.get(scene_root_entity).is_ok())
+    {
+        time.unpause();
+        *has_unpaused = true;
+    }
+}
+
 // control the quad with keyboard inputs
 pub fn control_quadcopter(
     keyboard_inputs: Res<ButtonInput<KeyCode>>,
@@ -164,7 +190,6 @@ pub fn control_quadcopter(
     mut desired_altitude: Local<Option<f32>>,
     gains: Res<QuadcopterGains>,
 ) {
-    // TODO: unpause on assets loaded instead of manually doing it
     if keyboard_inputs.just_pressed(KeyCode::KeyP) {
         if time.is_paused() {
             time.unpause();
