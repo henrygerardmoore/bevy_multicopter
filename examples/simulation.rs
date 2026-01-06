@@ -14,6 +14,12 @@ fn main() {
             brightness: 1.0 / 5.0f32,
             ..default()
         })
+        .insert_resource(QuadcopterGains {
+            p_vertical: 40.,
+            d_vertical: 30.,
+            p_angular: 0.05,
+            d_angular: 0.01,
+        })
         .add_plugins((
             DefaultPlugins,
             PhysicsPlugins::default(),
@@ -131,6 +137,15 @@ pub fn setup(
 #[reflect(Component)]
 pub struct QuadcopterControls([f32; 4]);
 
+#[derive(Resource, Reflect)]
+#[reflect(Resource)]
+pub struct QuadcopterGains {
+    pub p_vertical: f32,
+    pub d_vertical: f32,
+    pub p_angular: f32,
+    pub d_angular: f32,
+}
+
 // control the quad with keyboard inputs
 pub fn control_quadcopter(
     keyboard_inputs: Res<ButtonInput<KeyCode>>,
@@ -147,6 +162,7 @@ pub fn control_quadcopter(
     >,
     gravity: Res<Gravity>,
     mut desired_altitude: Local<Option<f32>>,
+    gains: Res<QuadcopterGains>,
 ) {
     // TODO: unpause on assets loaded instead of manually doing it
     if keyboard_inputs.just_pressed(KeyCode::KeyP) {
@@ -212,13 +228,11 @@ pub fn control_quadcopter(
     }
 
     // target hover
-    let vertical_proportional_gain = 40.;
-    let vertical_derivative_gain = 30.;
     let gravity_force = gravity.0.y * mass.value();
     let altitude = transform.translation.y;
     let vertical_velocity = linear_velocity.y;
-    let p_term = vertical_proportional_gain * (*desired_altitude - altitude);
-    let d_term = vertical_derivative_gain * (0. - vertical_velocity);
+    let p_term = gains.p_vertical * (*desired_altitude - altitude);
+    let d_term = gains.d_vertical * (0. - vertical_velocity);
     let desired_vertical_thrust = p_term + d_term - gravity_force;
 
     // the proportion of thrust that actually helps go up
@@ -235,8 +249,6 @@ pub fn control_quadcopter(
     // in order to achieve the necessary angle control
     let mut propeller_thrust_proportions = [0.0_f32; 4];
 
-    let angular_proportional_gain = 0.05;
-    let angular_derivative_gain = 0.01;
     let roll_diff = desired_roll - roll;
     let pitch_diff = desired_pitch - pitch;
     let yaw_diff = desired_yaw - yaw;
@@ -246,16 +258,16 @@ pub fn control_quadcopter(
         z: 0.,
     } - angular_velocity;
 
-    let p_pitch = angular_proportional_gain * (pitch_diff);
-    let d_pitch = angular_derivative_gain * angular_velocity_difference.x;
+    let p_pitch = gains.p_angular * (pitch_diff);
+    let d_pitch = gains.d_angular * angular_velocity_difference.x;
     let desired_pitch_torque = p_pitch + d_pitch;
 
-    let p_yaw = angular_proportional_gain * (yaw_diff);
-    let d_yaw = angular_derivative_gain * angular_velocity_difference.y;
+    let p_yaw = gains.p_angular * (yaw_diff);
+    let d_yaw = gains.d_angular * angular_velocity_difference.y;
     let desired_yaw_torque = p_yaw + d_yaw;
 
-    let p_roll = angular_proportional_gain * (roll_diff);
-    let d_roll = angular_derivative_gain * angular_velocity_difference.z;
+    let p_roll = gains.p_angular * (roll_diff);
+    let d_roll = gains.d_angular * angular_velocity_difference.z;
     let desired_roll_torque = p_roll + d_roll;
 
     // map the desired roll pitch yaw torques to the propellers according to their positions
