@@ -4,7 +4,7 @@ use bevy::{core_pipeline::Skybox, prelude::*, scene::SceneInstance};
 use bevy_egui::EguiPlugin;
 #[cfg(feature = "dev")]
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
-use bevy_quadcopter::{Multicopter, PropellerInfo, RotationDirection};
+use bevy_multicopter::{Multicopter, PropellerInfo, RotationDirection};
 
 fn main() {
     App::new()
